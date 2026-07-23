@@ -125,6 +125,8 @@ public final class TerminalView extends View {
 
     private final boolean mAccessibilityEnabled;
 
+    private float mLineSpacingMultiplier = 1.0f;
+
     private static final String LOG_TAG = "TerminalView";
 
     public TerminalView(Context context, AttributeSet attributes) { // NO_UCD (unused code)
@@ -496,12 +498,30 @@ public final class TerminalView extends View {
      * @param textSize the new font size, in density-independent pixels.
      */
     public void setTextSize(int textSize) {
-        mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface);
+        mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface,
+            mLineSpacingMultiplier);
         updateSize();
     }
 
     public void setTypeface(Typeface newTypeface) {
-        mRenderer = new TerminalRenderer(mRenderer.mTextSize, newTypeface);
+        mRenderer = new TerminalRenderer(mRenderer.mTextSize, newTypeface, mLineSpacingMultiplier);
+        updateSize();
+        invalidate();
+    }
+
+    /**
+     * Sets a multiplier for the font's natural line spacing. The renderer,
+     * terminal row calculation, scrolling and text selection all consume the
+     * resulting line spacing so their coordinate systems remain aligned.
+     *
+     * @param multiplier line spacing multiplier in the inclusive range 1.0–2.0.
+     */
+    public void setLineSpacing(float multiplier) {
+        float normalizedMultiplier = Float.isFinite(multiplier) ? Math.max(1.0f, Math.min(2.0f, multiplier)) : 1.0f;
+        if (Float.compare(mLineSpacingMultiplier, normalizedMultiplier) == 0) return;
+        mLineSpacingMultiplier = normalizedMultiplier;
+        if (mRenderer == null) return;
+        mRenderer = new TerminalRenderer(mRenderer.mTextSize, mRenderer.mTypeface, mLineSpacingMultiplier);
         updateSize();
         invalidate();
     }

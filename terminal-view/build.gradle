@@ -26,15 +26,16 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
 }
 
 dependencies {
     testImplementation 'junit:junit:4.13.2'
-}
-
-task sourceJar(type: Jar) {
-    from android.sourceSets.main.java.srcDirs
-    classifier "sources"
 }
 
 afterEvaluate {
@@ -46,7 +47,6 @@ afterEvaluate {
                 groupId = 'com.termux'
                 artifactId = 'terminal-view'
                 version = '0.118.0'
-                artifact(sourceJar)
             }
         }
     }

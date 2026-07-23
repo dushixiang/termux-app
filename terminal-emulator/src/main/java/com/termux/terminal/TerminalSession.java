@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.UUID;
 
 /**
@@ -75,6 +76,7 @@ public final class TerminalSession extends TerminalOutput {
     private final String[] mArgs;
     private final String[] mEnv;
     private final Integer mTranscriptRows;
+    private final TerminalSessionTransport mExternalTransport;
 
 
     private static final String LOG_TAG = "TerminalSession";
@@ -86,6 +88,22 @@ public final class TerminalSession extends TerminalOutput {
         this.mEnv = env;
         this.mTranscriptRows = transcriptRows;
         this.mClient = client;
+        this.mExternalTransport = null;
+    }
+
+    /**
+     * Create a terminal session backed by an externally managed process or
+     * connection instead of a local subprocess and PTY.
+     */
+    public TerminalSession(TerminalSessionTransport transport, Integer transcriptRows, TerminalSessionClient client) {
+        if (transport == null) throw new NullPointerException("transport");
+        this.mShellPath = null;
+        this.mCwd = null;
+        this.mArgs = null;
+        this.mEnv = null;
+        this.mTranscriptRows = transcriptRows;
+        this.mClient = client;
+        this.mExternalTransport = transport;
     }
 
     /**
@@ -104,7 +122,11 @@ public final class TerminalSession extends TerminalOutput {
         if (mEmulator == null) {
             initializeEmulator(columns, rows, cellWidthPixels, cellHeightPixels);
         } else {
-            JNI.setPtyWindowSize(mTerminalFileDescriptor, rows, columns, cellWidthPixels, cellHeightPixels);
+            if (mExternalTransport == null) {
+                JNI.setPtyWindowSize(mTerminalFileDescriptor, rows, columns, cellWidthPixels, cellHeightPixels);
+            } else {
+                mExternalTransport.resize(columns, rows, cellWidthPixels, cellHeightPixels);
+            }
             mEmulator.resize(columns, rows, cellWidthPixels, cellHeightPixels);
         }
     }
@@ -122,6 +144,11 @@ public final class TerminalSession extends TerminalOutput {
      */
     public void initializeEmulator(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mClient);
+
+        if (mExternalTransport != null) {
+            mExternalTransport.resize(columns, rows, cellWidthPixels, cellHeightPixels);
+            return;
+        }
 
         int[] processId = new int[1];
         mTerminalFileDescriptor = JNI.createSubprocess(mShellPath, mCwd, mArgs, mEnv, processId, rows, columns, cellWidthPixels, cellHeightPixels);
@@ -172,10 +199,37 @@ public final class TerminalSession extends TerminalOutput {
 
     }
 
-    /** Write data to the shell process. */
+    /** Write data to the shell process or external transport. */
     @Override
     public void write(byte[] data, int offset, int count) {
-        if (mShellPid > 0) mTerminalToProcessIOQueue.write(data, offset, count);
+        if (mExternalTransport != null) {
+            if (mShellPid != -1) mExternalTransport.write(data, offset, count);
+        } else if (mShellPid > 0) {
+            mTerminalToProcessIOQueue.write(data, offset, count);
+        }
+    }
+
+    /**
+     * Append output received from an external transport to the emulator.
+     * This method must be called on the main thread after the emulator has
+     * been initialized by attaching the session to a sized terminal view.
+     */
+    public void append(byte[] data, int offset, int count) {
+        if (mExternalTransport == null)
+            throw new IllegalStateException("append() is only available for external terminal sessions");
+        if (mEmulator == null)
+            throw new IllegalStateException("Terminal emulator has not been initialized");
+        if (offset < 0 || count < 0 || offset + count > data.length)
+            throw new IndexOutOfBoundsException("Invalid offset or count");
+        if (count == 0) return;
+
+        if (offset == 0) {
+            mEmulator.append(data, count);
+        } else {
+            byte[] selectedData = Arrays.copyOfRange(data, offset, offset + count);
+            mEmulator.append(selectedData, selectedData.length);
+        }
+        notifyScreenUpdate();
     }
 
     /** Write the Unicode code point to the terminal encoded in UTF-8. */
@@ -232,6 +286,16 @@ public final class TerminalSession extends TerminalOutput {
 
     /** Finish this terminal session by sending SIGKILL to the shell. */
     public void finishIfRunning() {
+        if (mExternalTransport != null) {
+            synchronized (this) {
+                if (mShellPid == -1) return;
+                mShellPid = -1;
+                mShellExitStatus = 0;
+            }
+            mExternalTransport.close();
+            mClient.onSessionFinished(this);
+            return;
+        }
         if (isRunning()) {
             try {
                 Os.kill(mShellPid, OsConstants.SIGKILL);

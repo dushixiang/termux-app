@@ -41,6 +41,12 @@ android {
     testOptions {
         unitTests.returnDefaultValues = true
     }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
 }
 
 tasks.withType(Test) {
@@ -53,11 +59,6 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
 }
 
-task sourceJar(type: Jar) {
-    from android.sourceSets.main.java.srcDirs
-    classifier "sources"
-}
-
 afterEvaluate {
     publishing {
         publications {
@@ -67,7 +68,6 @@ afterEvaluate {
                 groupId = 'com.termux'
                 artifactId = 'terminal-emulator'
                 version = '0.118.0'
-                artifact(sourceJar)
             }
         }
     }

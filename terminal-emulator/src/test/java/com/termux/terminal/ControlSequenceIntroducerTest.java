@@ -52,7 +52,13 @@ public class ControlSequenceIntroducerTest extends TerminalTestCase {
 	public void testCsi3J() {
 		withTerminalSized(3, 2).enterString("a\r\nb\r\nc\r\nd");
 		assertEquals("a\nb\nc\nd", mTerminal.getScreen().getTranscriptText());
+		assertEquals(2, mTerminal.getScreen().getActiveTranscriptRows());
+		enterString("\033[2J");
+		assertEquals(2, mTerminal.getScreen().getActiveTranscriptRows());
+
+		withTerminalSized(3, 2).enterString("a\r\nb\r\nc\r\nd");
 		enterString("\033[3J");
+		assertEquals(0, mTerminal.getScreen().getActiveTranscriptRows());
 		assertEquals("c\nd", mTerminal.getScreen().getTranscriptText());
 
 		withTerminalSized(3, 2).enterString("Lorem_ipsum");

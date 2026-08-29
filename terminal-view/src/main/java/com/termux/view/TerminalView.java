@@ -450,7 +450,15 @@ public final class TerminalView extends View {
         if (mEmulator == null) return;
 
         int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
-        if (mTopRow < -rowsInHistory) mTopRow = -rowsInHistory;
+        if (mTopRow < -rowsInHistory) {
+            mTopRow = -rowsInHistory;
+            if (!mScroller.isFinished()) {
+                // A transcript truncation such as CSI 3 J or RIS invalidates
+                // the fling range calculated from the old history. Stop it
+                // when the current viewport has to be clamped to the new range.
+                mScroller.abortAnimation();
+            }
+        }
 
         boolean skipScrolling = false;
         if (isSelectingText()) {
